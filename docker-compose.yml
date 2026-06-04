@@ -1,0 +1,24 @@
+services:
+  mk2-daily:
+    build: .
+    container_name: mk2-daily-worker
+    restart: "no"
+    volumes:
+      - /root/mark1/service_account.json:/root/mark1/service_account.json:ro
+    env_file:
+      - .env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/mark1/service_account.json
+
+  mk2-refresh:
+    build: .
+    container_name: mk2-refresh-worker
+    restart: "no"
+    volumes:
+      - /root/mark1/service_account.json:/root/mark1/service_account.json:ro
+    env_file:
+      - .env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/root/mark1/service_account.json
+    entrypoint: ["python3", "-u", "workers/video_refresh_worker.py"]
+    command: ["--once"]
