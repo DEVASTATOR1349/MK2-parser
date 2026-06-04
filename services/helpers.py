@@ -1,14 +1,12 @@
 """
-Utility functions re-implemented to satisfy the import contract from project_content_pipeline.py.
-Original lives in the full scout project; this is the minimal standalone version.
+Helper functions extracted from the original competitor_pipeline.
+These are standalone and have NO external dependencies beyond stdlib/re.
 """
 from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
 from typing import Any
-
-from dateutil import parser as dateutil_parser
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -24,7 +22,6 @@ def _parse_dt(value: Any) -> datetime | None:
     try:
         ts = float(text)
         if 1_000_000_000 < ts < 20_000_000_000:
-            # Seconds or milliseconds since epoch
             divisor = 1000 if ts > 1e12 else 1
             return datetime.fromtimestamp(ts / divisor, tz=timezone.utc)
     except (ValueError, TypeError):
@@ -38,6 +35,7 @@ def _parse_dt(value: Any) -> datetime | None:
             pass
     # Fallback: dateutil handles most ISO / RFC formats
     try:
+        from dateutil.parser import parse as dateutil_parser
         dt = dateutil_parser.parse(text, dayfirst=False)
         return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     except Exception:
@@ -64,7 +62,7 @@ def _parse_int(value: Any) -> int:
         str(value)
         .strip()
         .replace("\xa0", "")   # non-breaking space
-        .replace(" ", "")  # narrow no-break space
+        .replace(" ", "")      # narrow no-break space
         .replace(" ", "")
         .replace(",", "")
         .replace("_", "")
@@ -82,11 +80,11 @@ def _metrics_text(views: int, likes: int, comments: int) -> str:
     """Format engagement metrics as a human-readable string."""
     parts: list[str] = []
     if views:
-        parts.append(f"👁 {views:,}".replace(",", " "))
+        parts.append(f"👁 {views:,}".replace(",", "\u00a0"))
     if likes:
-        parts.append(f"❤ {likes:,}".replace(",", " "))
+        parts.append(f"❤ {likes:,}".replace(",", "\u00a0"))
     if comments:
-        parts.append(f"💬 {comments:,}".replace(",", " "))
+        parts.append(f"💬 {comments:,}".replace(",", "\u00a0"))
     return " | ".join(parts)
 
 
@@ -95,7 +93,6 @@ def _sanitize_caption(text: Any, limit: int = 5000) -> str:
     if not text:
         return ""
     s = str(text)
-    # Strip ASCII control chars except LF (0x0A) and TAB (0x09)
     s = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", s)
     return s[:limit].strip()
 

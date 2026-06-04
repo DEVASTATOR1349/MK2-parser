@@ -22,9 +22,8 @@ from urllib.parse import urlparse, parse_qs
 import aiohttp
 import requests
 
-from services.competitor_pipeline import _parse_int
+from services.helpers import _parse_int
 from services.project_content_pipeline import (
-    _load_extra_env,
     _apify_run,
     INSTAGRAM_ACTOR_ID,
     TIKTOK_POST_APIFY_ACTOR_ID,
@@ -47,6 +46,26 @@ _BROWSER_UA = (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _load_extra_env() -> None:
+    """Load extra env vars from configured file."""
+    env_path = os.getenv("SCOUT_EXTRA_ENV_FILE", "/root/.openclaw/workspace/scripts/api-keys.env")
+    if not env_path or not os.path.exists(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                raw = line.strip()
+                if not raw or raw.startswith("#") or "=" not in raw:
+                    continue
+                key, value = raw.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and value and key not in os.environ:
+                    os.environ[key] = value
+    except Exception as exc:
+        log.warning("Could not load extra env file %s: %s", env_path, exc)
+
 
 def _youtube_api_key() -> str:
     _load_extra_env()

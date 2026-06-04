@@ -16,9 +16,11 @@ import gspread
 import requests
 
 from workers.common import get_client, is_triggered, load_clients_config
-from services.downloader import APIFY_TOKEN
-from services.competitor_pipeline import _parse_dt, _format_dt, _parse_int, _metrics_text, _sanitize_caption, _join_text_list
+from services.helpers import _parse_dt, _format_dt, _parse_int, _metrics_text, _sanitize_caption, _join_text_list
 import db as scout_db
+
+# APIFY_TOKEN: loaded from env; no external dependency needed
+APIFY_TOKEN = os.getenv("APIFY_API_TOKEN", "")
 
 log = logging.getLogger("scout.project_content")
 
@@ -54,7 +56,6 @@ MASTER_TRIGGER_CELL = os.getenv("SCOUT_PROJECT_SYNC_TRIGGER_CELL", "B2")
 MASTER_SUMMARY_ROW = int(os.getenv("SCOUT_PROJECT_SYNC_SUMMARY_ROW", "2"))
 MSK = ZoneInfo("Europe/Moscow")
 YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
-EXTRA_ENV_FILE = os.getenv("SCOUT_EXTRA_ENV_FILE", "")
 VK_API_BASE_URL = "https://api.vk.com/method"
 RUTUBE_API_BASE_URL = "https://rutube.ru/api"
 
@@ -432,7 +433,6 @@ async def _apify_run(actor_id: str, payload: dict) -> list[dict]:
 
 
 async def _apify_run_with_meta(actor_id: str, payload: dict) -> dict[str, Any]:
-    _load_extra_env()
     if not APIFY_TOKEN:
         raise RuntimeError("APIFY_API_TOKEN is not configured")
 
@@ -911,32 +911,12 @@ async def fetch_facebook_accounts_batch(accounts: list[tuple[str, int]]) -> dict
     return result
 
 
-def _load_extra_env() -> None:
-    global APIFY_TOKEN
-    env_path = EXTRA_ENV_FILE
-    if not env_path or not os.path.exists(env_path):
-        return
-    try:
-        with open(env_path, "r", encoding="utf-8") as fh:
-            for line in fh:
-                raw = line.strip()
-                if not raw or raw.startswith("#") or "=" not in raw:
-                    continue
-                key, value = raw.split("=", 1)
-                key = key.strip()
-                value = value.strip().strip('"').strip("'")
-                if key and value and key not in os.environ:
-                    os.environ[key] = value
-    except Exception as exc:
-        log.warning("Could not load extra env file %s: %s", env_path, exc)
-    APIFY_TOKEN = os.getenv("APIFY_API_TOKEN") or APIFY_TOKEN
 
 
 def _youtube_api_key() -> str:
     key = (os.getenv("YOUTUBE_API_KEY") or "").strip()
     if key:
         return key
-    _load_extra_env()
     return (os.getenv("YOUTUBE_API_KEY") or "").strip()
 
 
@@ -1170,7 +1150,6 @@ def _tiktok_profile_name(url: str) -> str:
 
 
 async def fetch_tiktok_account(account_url: str, results_limit: int | None = None) -> dict[str, Any]:
-    _load_extra_env()
     username = _tiktok_profile_name(account_url)
     if not username:
         raise RuntimeError(f"TikTok username missing in URL: {account_url}")
@@ -1202,7 +1181,6 @@ async def fetch_tiktok_account(account_url: str, results_limit: int | None = Non
 
 
 async def fetch_facebook_account(account_url: str, results_limit: int | None = None) -> dict[str, Any]:
-    _load_extra_env()
     limit = max(1, min(int(results_limit if results_limit is not None else FACEBOOK_RESULTS_LIMIT), 500))
     post_items = await _apify_run(
         FACEBOOK_POSTS_APIFY_ACTOR_ID,
@@ -1227,7 +1205,6 @@ async def fetch_facebook_account(account_url: str, results_limit: int | None = N
 
 
 async def _vk_api_get(session: aiohttp.ClientSession, method: str, params: dict[str, Any]) -> dict[str, Any]:
-    _load_extra_env()
     token = (os.getenv("VK_API_TOKEN") or "").strip()
     if not token:
         raise RuntimeError("VK_API_TOKEN is not configured")
