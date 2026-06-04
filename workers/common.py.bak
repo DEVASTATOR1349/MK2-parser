@@ -101,10 +101,6 @@ def load_clients_from_sheet(master_sheet_id: str) -> list[dict]:
         m = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", url)
         if not m:
             continue
-        # Column Z (index 25) = checkbox from registry: skip if unchecked
-        enabled = row[25].strip().lower() if len(row) > 25 else ""
-        if enabled and enabled not in ("true", "1", "yes"):
-            continue
         row_num = row[0].strip()
         key = f"client_{row_num}"
         clients.append({
