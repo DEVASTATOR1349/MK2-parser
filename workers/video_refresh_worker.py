@@ -9,11 +9,11 @@ platform API, updates the same row, and appends a snapshot to 'История в
 Refresh schedule (days between successive refreshes):
   0→1: +3d  |  1→2: +7d  |  2→3: +14d  |  3→4: +21d  |  4+→*: +31d
 
-New columns added to 'База Данных видео по проекту':
-  AO: Количество сборов    (parse_count)
-  AP: Последний рефреш     (last_refreshed_at, dd.mm.yyyy HH:MM МСК)
-  AQ: Следующий рефреш     (next_refresh_at,   dd.mm.yyyy HH:MM МСК)
-  AR: Статус рефреша       (OK / ERROR / text)
+Columns used for refresh tracking in 'База Данных видео по проекту':
+  T:  Дата последнего обновления (last_refreshed_at, dd.mm.yyyy HH:MM МСК)
+  U:  Обновлений (раз)           (parse_count)
+  AQ: Следующий рефреш           (next_refresh_at,   dd.mm.yyyy HH:MM МСК)
+  AR: Статус рефреша             (OK / ERROR / text)
 
 Run:
   python workers/video_refresh_worker.py --once
@@ -69,13 +69,13 @@ COL_COMMENTS      = 11  # K
 COL_LIKES         = 12  # L
 COL_PLAY_VIEWS    = 13  # M
 COL_RAW_VIEWS     = 14  # N
-COL_PARSE_COUNT   = 41  # AO
-COL_LAST_REFRESH  = 42  # AP
+COL_PARSE_COUNT   = 21  # U
+COL_LAST_REFRESH  = 20  # T
 COL_NEXT_REFRESH  = 43  # AQ
 COL_STATUS        = 44  # AR
 
 REFRESH_HEADER_ROW = 4
-REFRESH_HEADERS = ["Количество сборов", "Последний рефреш", "Следующий рефреш", "Статус рефреша"]
+REFRESH_HEADERS = ["Дата последнего обновления", "Обновлений (раз)"]
 
 HISTORY_SHEET_NAME = "История видео"
 HISTORY_HEADERS = [[
@@ -101,23 +101,38 @@ def _col_letter(n: int) -> str:
 def _ensure_refresh_columns(videos_ws) -> None:
     """Add AO:AR headers in row 4 if they are missing."""
     try:
-        existing = _sheet_call(videos_ws.get, f"AO{REFRESH_HEADER_ROW}:AR{REFRESH_HEADER_ROW}")
+        existing = _sheet_call(videos_ws.get, f"T{REFRESH_HEADER_ROW}:U{REFRESH_HEADER_ROW}")
         if existing and any(c.strip() for c in (existing[0] if existing else [])):
             return  # headers already written
     except Exception:
         pass
 
-    # Ensure sheet has enough columns
-    if int(getattr(videos_ws, "col_count", 0) or 0) < COL_STATUS:
-        _sheet_call(videos_ws.add_cols, COL_STATUS - int(getattr(videos_ws, "col_count", 0) or 0))
+    # Ensure sheet has enough columns for AQ:AR (status tracking)
+    required_cols = 44  # AR column
+    if int(getattr(videos_ws, "col_count", 0) or 0) < required_cols:
+        _sheet_call(videos_ws.add_cols, required_cols - int(getattr(videos_ws, "col_count", 0) or 0))
 
     _sheet_call(
         videos_ws.update,
-        f"AO{REFRESH_HEADER_ROW}:AR{REFRESH_HEADER_ROW}",
+        f"T{REFRESH_HEADER_ROW}:U{REFRESH_HEADER_ROW}",
         [REFRESH_HEADERS],
         value_input_option="USER_ENTERED",
     )
-    log.info("Wrote refresh column headers to AO:AR row %s", REFRESH_HEADER_ROW)
+
+    # Also write AQ:AR headers if missing
+    try:
+        aq_existing = _sheet_call(videos_ws.get, f"AQ{REFRESH_HEADER_ROW}:AR{REFRESH_HEADER_ROW}")
+        if not (aq_existing and any(c.strip() for c in (aq_existing[0] if aq_existing else []))):
+            _sheet_call(
+                videos_ws.update,
+                f"AQ{REFRESH_HEADER_ROW}:AR{REFRESH_HEADER_ROW}",
+                [["Следующий рефреш", "Статус рефреша"]],
+                value_input_option="USER_ENTERED",
+            )
+    except Exception:
+        pass
+
+    log.info("Wrote refresh column headers to T:U row %s", REFRESH_HEADER_ROW)
 
 
 def _read_candidates(videos_ws, now: datetime, max_rows: int) -> list[dict]:
@@ -129,7 +144,8 @@ def _read_candidates(videos_ws, now: datetime, max_rows: int) -> list[dict]:
     start = VIDEO_DATA_START_ROW
 
     core = _sheet_call(videos_ws.get, f"A{start}:D{last_row}")   # published_at, _, platform, video_url
-    meta = _sheet_call(videos_ws.get, f"AO{start}:AR{last_row}")  # parse_count, last, next, status
+    meta = _sheet_call(videos_ws.get, f"T{start}:U{last_row}")  # last_refreshed_at, parse_count
+    meta2 = _sheet_call(videos_ws.get, f"AQ{start}:AR{last_row}")  # next_refresh_at, status
 
     candidates: list[dict] = []
     for offset, core_row in enumerate(core):
@@ -143,10 +159,11 @@ def _read_candidates(videos_ws, now: datetime, max_rows: int) -> list[dict]:
         platform = canonical_platform_name(platform_raw)
 
         meta_row        = meta[offset] if offset < len(meta) else []
-        parse_count_str = (meta_row[0] if len(meta_row) > 0 else "").strip()
-        last_str        = (meta_row[1] if len(meta_row) > 1 else "").strip()
-        next_str        = (meta_row[2] if len(meta_row) > 2 else "").strip()
-        status          = (meta_row[3] if len(meta_row) > 3 else "").strip()
+        meta_row2       = meta2[offset] if offset < len(meta2) else []
+        last_str        = (meta_row[0] if len(meta_row) > 0 else "").strip()
+        parse_count_str = (meta_row[1] if len(meta_row) > 1 else "").strip()
+        next_str        = (meta_row2[0] if len(meta_row2) > 0 else "").strip()
+        status          = (meta_row2[1] if len(meta_row2) > 1 else "").strip()
 
         if status == "STOPPED":
             continue
@@ -187,7 +204,8 @@ def _write_row_updates(videos_ws, updates: list[dict]) -> None:
 
         batch.extend([
             {"range": f"K{row}:N{row}", "values": [[c, l, v, v]]},
-            {"range": f"AO{row}:AR{row}", "values": [[pc, last, nxt, stat]]},
+            {"range": f"T{row}:U{row}", "values": [[last, pc]]},
+            {"range": f"AQ{row}:AR{row}", "values": [[nxt, stat]]},
         ])
 
     _sheet_call(videos_ws.batch_update, batch, value_input_option="USER_ENTERED")
