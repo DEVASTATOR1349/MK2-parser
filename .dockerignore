@@ -1,0 +1,12 @@
+.env
+.env.*
+*.json
+!package*.json
+config/
+__pycache__/
+*.pyc
+.venv/
+venv/
+logs/
+*.log
+.git/
